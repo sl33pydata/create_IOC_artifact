@@ -1,0 +1,76 @@
+    import phantom.rules as phantom
+
+    phantom.debug(f"[IOC ARTIFACT GEN] container_id input = {container_id}")
+
+    if not container_id:
+        return {"success": False, "error": "Missing container_id"}
+
+    # Limits
+    max_ips = max_ips or 500
+    max_urls = max_urls or 500
+    max_domains = max_domains or 500
+    max_hashes = max_hashes or 1000
+    global_limit = global_limit or 2500
+
+    created = 0
+
+    def normalize(raw):
+        out = []
+        if not raw:
+            return out
+        for v in raw:
+            if isinstance(v, list):
+                out.extend(normalize(v))
+            elif v not in (None, "", {}):
+                out.append(str(v))
+        return list(dict.fromkeys(out))  # dedup, preserve order
+
+    ips = normalize(ips)
+    urls = normalize(urls)
+    domains = normalize(domains)
+    hashes = normalize(hashes)
+
+    phantom.debug(
+        f"[IOC ARTIFACT GEN] ips={len(ips)} domains={len(domains)} "
+        f"urls={len(urls)} hashes={len(hashes)}"
+    )
+
+    def create_art(value, indicator_type):
+        nonlocal created
+
+        if created >= global_limit:
+            return
+
+        phantom.add_artifact(
+            container={"id": container_id},   
+            name=f"{indicator_type} indicator: {value}",
+            label="threat",
+            severity="low",
+            artifact_type=indicator_type,
+            raw_data={
+                "source": "OTX STIX ingestion"
+            },
+            cef_data={                        
+                "indicator": value,
+                "indicator_type": indicator_type,
+                "artifactype": indicator_type
+            }
+        )
+
+        created += 1
+
+    for v in ips[:max_ips]:
+        create_art(v, "ip")
+
+    for v in urls[:max_urls]:
+        create_art(v, "url")
+
+    for v in domains[:max_domains]:
+        create_art(v, "domain")
+
+    for v in hashes[:max_hashes]:
+        create_art(v, "hash")
+
+    phantom.debug(f"[IOC ARTIFACT GEN] Total artifacts created: {created}")
+
+    return {"success": True, "created": created}
